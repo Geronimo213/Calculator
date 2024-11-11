@@ -1,19 +1,25 @@
-﻿void Test(string text)
+﻿using System.ComponentModel;
+using System.Reflection.Metadata.Ecma335;
+using Microsoft.VisualBasic.CompilerServices;
+
+void Test(string text)
 {
     var parser = new Parser();
     try
     {
+        Console.WriteLine("Parsing...");
         parser.Parse(text);
         Console.WriteLine($"\"{text}\"\t OK");
     }
     catch (ParserException e)
     {
-        Console.WriteLine($"\"{text}\"\t {e.Message}\n");
+        Console.WriteLine($"\"{text}\"\t {e.Msg}\n");
+        Console.WriteLine(e.Ptr.PadLeft(e.Pos + e.Ptr.Length + 1));
     }
 }
 
 
-Test("1+2+3+4");
+/*Test("1+2+3+4");
 Test("1*2*3*4");
 Test("1-2-3-4");
 Test("1/2/3/4");
@@ -35,8 +41,43 @@ Test("M1 + 2.5");
 Test("1 + 2&5");
 Test("1 * 2.5.6");
 Test("1 ** 2.5");
-Test("*1 / 2.5");
+Test("*1 / 2.5");*/
+while (true)
+{ 
+    Console.WriteLine("Write an arithmetic expression or \"exit\" to close.");
+    string input = Console.ReadLine() ?? "";
+    switch (input)
+    {
+        case "":
+            Console.WriteLine("Empty input. Please try again.");
+            break;
+        case "exit":
+            Console.WriteLine("Exiting. Have a good day.");
+            Environment.Exit(0);
+            break;
+        default:
+            Test(input);
+            break;
+    }
+}
+public enum AstNodeType
+{
+    Undefined,
+    OperatorPlus,
+    OperatorMinus,
+    OperatorMul,
+    OperatorDiv,
+    UnaryMinus,
+    NumberValue
+}
 
+public class AstNode
+{
+    public AstNodeType Type = AstNodeType.Undefined;
+    public double Value = 0;
+    public AstNode? Left = null;
+    public AstNode? Right = null;
+}
 
 class Parser
 {
@@ -44,86 +85,6 @@ class Parser
     private string _text = "";
     private int _idx;
 
-    private void Expression()
-    {
-        Term();
-        Expression1();
-    }
-
-    private void Expression1()
-    {
-        switch (_crtToken.Type)
-        {
-            case TokenType.Plus:
-                GetNextToken();
-                Term();
-                Expression1();
-                break;
-            case TokenType.Minus:
-                GetNextToken();
-                Term();
-                Expression1();
-                break;
-        }
-    }
-
-    private void Term()
-    {
-        Factor();
-        Term1();
-    }
-
-    private void Term1()
-    {
-        switch (_crtToken.Type)
-        {
-            case TokenType.Mul:
-                GetNextToken();
-                Factor();
-                Term1();
-                break;
-            case TokenType.Div:
-                GetNextToken();
-                Factor();
-                Term1();
-                break;
-        }
-    }
-
-    private void Factor()
-    {
-        switch (_crtToken.Type)
-        {
-            case TokenType.OpenParenthesis: 
-                GetNextToken();
-                Expression();
-                Match(')');
-                break;
-            case TokenType.Minus:
-                GetNextToken();
-                Factor();
-                break;
-            case TokenType.Number:
-                GetNextToken();
-                break;
-            default:
-                string error = $"Unexpected token \"{_crtToken.Symbol}\" at position {_idx}";
-                throw new ParserException(error, _idx);
-        }
-    }
-
-    private void Match(char expected)
-    {
-        if (_text[_idx-1] == expected)
-        {
-            GetNextToken();
-        }
-        else
-        {
-            string error = $"Expected token \"{expected}\" at position {_idx}";
-            throw new ParserException(error, _idx);
-        }
-    }
     private enum TokenType
     {
         Error,
@@ -136,6 +97,7 @@ class Parser
         CloseParenthesis,
         Number
     }
+
 
     private struct Token(TokenType type = TokenType.Error, double value = 0, char symbol = '0')
     {
@@ -151,6 +113,135 @@ class Parser
             _idx++;
         }
     }
+
+    private AstNode Expression()
+    {
+        AstNode tNode =  Term();
+        AstNode e1Node =  Expression1();
+        return CreateNode(AstNodeType.OperatorPlus, tNode, e1Node);
+    }
+
+    private AstNode Expression1()
+    {
+        var tNode = new AstNode();
+        var e1Node = new AstNode();
+
+        switch (_crtToken.Type)
+        {
+            case TokenType.Plus:
+                GetNextToken();
+                tNode = Term();
+                e1Node = Expression1();
+                return CreateNode(AstNodeType.OperatorPlus, e1Node, tNode);
+            case TokenType.Minus:
+                GetNextToken();
+                tNode = Term();
+                e1Node = Expression1();
+                return CreateNode(AstNodeType.OperatorMinus, e1Node, tNode);
+        }
+
+        return CreateNodeNumber(0);
+    }
+
+    private AstNode Term()
+    {
+        var fNode = Factor();
+        var t1Node = Term1();
+
+        return CreateNode(AstNodeType.OperatorMul, fNode, t1Node);
+    }
+
+    private AstNode Term1()
+    {
+        var fNode = new AstNode();
+        var t1Node = new AstNode();
+        switch (_crtToken.Type)
+        {
+            case TokenType.Mul:
+                GetNextToken();
+                fNode = Factor();
+                t1Node = Term1();
+                return CreateNode(AstNodeType.OperatorMul, t1Node, fNode);
+            case TokenType.Div:
+                GetNextToken();
+                fNode = Factor();
+                t1Node = Term1();
+                return CreateNode(AstNodeType.OperatorDiv, t1Node, fNode);
+        }
+
+        return CreateNodeNumber(1);
+    }
+
+    private AstNode Factor()
+    {
+        var node = new AstNode();
+        switch (_crtToken.Type)
+        {
+            case TokenType.OpenParenthesis: 
+                GetNextToken();
+                node = Expression();
+                Match(')');
+                return node;
+            case TokenType.Minus:
+                GetNextToken();
+                node = Factor();
+                return node;
+            case TokenType.Number:
+                double value = _crtToken.Value;
+                GetNextToken();
+                return CreateNodeNumber(value);
+            default:
+                string error = $"Unexpected token \"{_crtToken.Symbol}\" at position {_idx-1}";
+                throw new ParserException(error, _idx-1);
+        }
+    }
+
+    AstNode CreateNode(AstNodeType type, AstNode left, AstNode right)
+    {
+        var node = new AstNode
+        {
+            Type = type,
+            Left = left,
+            Right = right
+        };
+        return node;
+    }
+
+    AstNode CreateUnaryNode(AstNode left)
+    {
+        var node = new AstNode
+        {
+            Type = AstNodeType.UnaryMinus,
+            Left = left,
+            Right = null
+        };
+
+        return node;
+    }
+
+    AstNode CreateNodeNumber(double value)
+    {
+        var node = new AstNode
+        {
+            Type = AstNodeType.NumberValue,
+            Value = value
+        };
+        return node;
+    }
+
+    private void Match(char expected)
+    {
+        if (_text[_idx-1] == expected)
+        {
+            GetNextToken();
+        }
+        else
+        {
+            string error = $"Expected token \"{expected}\" at position {_idx}";
+            throw new ParserException(error, _idx);
+        }
+    }
+
 
     private void GetNextToken()
     {
@@ -233,24 +324,21 @@ class Parser
         return double.Parse(_text.Substring(index, _idx - index));
     }
 
-    public void Parse(string text)
+    public AstNode Parse(string text)
     {
         _text = text;
         _idx = 0;
         GetNextToken();
-        Expression();
+        return Expression();
     }
 
     
 }
-class ParserException : Exception
+class ParserException(string message, int pos) : Exception
 {
-    private int _pos;
+    public int Pos { get;} = pos;
+    public string Msg { get;} = message;
+    public string Ptr = "^---Here";
 
-    public ParserException(string message, int pos)
-    {
-        Console.WriteLine(message);
-        _pos = pos;
-    }
 }
 
