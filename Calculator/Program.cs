@@ -7,9 +7,19 @@ void Test(string text)
     var parser = new Parser();
     try
     {
-        Console.WriteLine("Parsing...");
-        parser.Parse(text);
-        Console.WriteLine($"\"{text}\"\t OK");
+        var ast = parser.Parse(text);
+        try
+        {
+            var eval = new Evaluator();
+            double val = eval.Evaluate(ast);
+
+            Console.WriteLine($"{text} = {val}");
+        }
+        catch(EvaluatorException e)
+        {
+            Console.WriteLine($"{text}\t {e.Msg}");
+        }
+
     }
     catch (ParserException e)
     {
@@ -340,5 +350,54 @@ class ParserException(string message, int pos) : Exception
     public string Msg { get;} = message;
     public string Ptr = "^---Here";
 
+}
+
+class Evaluator
+{
+    double EvaluateSubtree(AstNode ast)
+    {
+        if (ast == null)
+        {
+            throw new EvaluatorException("Incorrect AST");
+        }
+
+        if (ast.Type == AstNodeType.NumberValue)
+        {
+            return ast.Value;
+        }
+        else if (ast.Type == AstNodeType.UnaryMinus)
+        {
+            return EvaluateSubtree(ast.Left);
+        }
+        else
+        {
+            double v1 = EvaluateSubtree(ast.Left);
+            double v2 = EvaluateSubtree(ast.Right);
+            switch (ast.Type)
+            {
+                case AstNodeType.OperatorPlus: return v1 + v2;
+                case AstNodeType.OperatorMinus: return v1 - v2;
+                case AstNodeType.OperatorMul: return v1 * v2;
+                case AstNodeType.OperatorDiv: return v1 / v2;
+            }
+        }
+
+        throw new EvaluatorException("Incorrect AST");
+    }
+
+    public double Evaluate(AstNode ast)
+    {
+        if (ast == null)
+        {
+            throw new EvaluatorException("Incorrect AST");
+        }
+
+        return EvaluateSubtree(ast);
+    }
+}
+
+ public class EvaluatorException(string message) : Exception
+{
+    public string Msg { get;} = message;
 }
 
